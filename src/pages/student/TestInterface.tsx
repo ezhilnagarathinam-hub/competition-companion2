@@ -1,0 +1,532 @@
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Clock, ChevronLeft, ChevronRight, Flag, Check, X, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { useStudentAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import type { Competition, Question, StudentAnswer } from '@/types/database';
+
+export default function TestInterface() {
+  const { competitionId } = useParams<{ competitionId: string }>();
+  const { studentId } = useStudentAuth();
+  const navigate = useNavigate();
+  
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [answers, setAnswers] = useState<Map<string, StudentAnswer>>(new Map());
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [readyDialogOpen, setReadyDialogOpen] = useState(true);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (competitionId && studentId) {
+      fetchTestData();
+    }
+  }, [competitionId, studentId]);
+
+  useEffect(() => {
+    if (hasStarted && timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current!);
+            handleAutoSubmit();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
+      };
+    }
+  }, [hasStarted, timeLeft]);
+
+  async function fetchTestData() {
+    try {
+      const { data: comp, error: compError } = await supabase
+        .from('competitions')
+        .select('*')
+        .eq('id', competitionId)
+        .single();
+
+      if (compError) throw compError;
+      setCompetition(comp as Competition);
+      setTimeLeft(comp.duration_minutes * 60);
+
+      const { data: qs, error: qError } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('competition_id', competitionId)
+        .order('question_number');
+
+      if (qError) throw qError;
+      setQuestions((qs as Question[]) || []);
+
+      // Fetch existing answers
+      const { data: existingAnswers, error: ansError } = await supabase
+        .from('student_answers')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('competition_id', competitionId);
+
+      if (ansError) throw ansError;
+
+      const answerMap = new Map<string, StudentAnswer>();
+      (existingAnswers as StudentAnswer[])?.forEach((a) => {
+        answerMap.set(a.question_id, a);
+      });
+      setAnswers(answerMap);
+
+      // Check if already started
+      const { data: status } = await supabase
+        .from('student_competitions')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('competition_id', competitionId)
+        .maybeSingle();
+
+      if (status?.has_started) {
+        setHasStarted(true);
+        setReadyDialogOpen(false);
+        
+        // Calculate remaining time
+        if (status.started_at) {
+          const startTime = new Date(status.started_at).getTime();
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const remaining = (comp.duration_minutes * 60) - elapsed;
+          setTimeLeft(Math.max(0, remaining));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching test data:', error);
+      toast.error('Failed to load test');
+      navigate('/student');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleStartTest = async () => {
+    try {
+      const { data: existing } = await supabase
+        .from('student_competitions')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('competition_id', competitionId)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase.from('student_competitions').insert([{
+          student_id: studentId,
+          competition_id: competitionId,
+          has_started: true,
+          started_at: new Date().toISOString(),
+        }]);
+      } else {
+        await supabase
+          .from('student_competitions')
+          .update({ has_started: true, started_at: new Date().toISOString() })
+          .eq('id', existing.id);
+      }
+
+      setHasStarted(true);
+      setReadyDialogOpen(false);
+    } catch (error) {
+      console.error('Error starting test:', error);
+      toast.error('Failed to start test');
+    }
+  };
+
+  const saveAnswer = useCallback(async (questionId: string, answer: 'A' | 'B' | 'C' | 'D' | null, isReview: boolean) => {
+    const question = questions.find(q => q.id === questionId);
+    const isCorrect = answer ? answer === question?.correct_answer : null;
+
+    try {
+      const existing = answers.get(questionId);
+      
+      if (existing) {
+        await supabase
+          .from('student_answers')
+          .update({
+            selected_answer: answer,
+            is_marked_for_review: isReview,
+            is_correct: isCorrect,
+          })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('student_answers')
+          .insert([{
+            student_id: studentId,
+            question_id: questionId,
+            competition_id: competitionId,
+            selected_answer: answer,
+            is_marked_for_review: isReview,
+            is_correct: isCorrect,
+          }]);
+      }
+
+      // Update local state
+      setAnswers((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(questionId, {
+          ...existing,
+          id: existing?.id || '',
+          student_id: studentId!,
+          question_id: questionId,
+          competition_id: competitionId!,
+          selected_answer: answer,
+          is_marked_for_review: isReview,
+          is_correct: isCorrect,
+          created_at: existing?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        return newMap;
+      });
+    } catch (error) {
+      console.error('Error saving answer:', error);
+    }
+  }, [answers, questions, studentId, competitionId]);
+
+  const handleSelectAnswer = (option: 'A' | 'B' | 'C' | 'D') => {
+    const currentQ = questions[currentIndex];
+    const currentAnswer = answers.get(currentQ.id);
+    saveAnswer(currentQ.id, option, currentAnswer?.is_marked_for_review || false);
+  };
+
+  const handleMarkReview = () => {
+    const currentQ = questions[currentIndex];
+    const currentAnswer = answers.get(currentQ.id);
+    saveAnswer(currentQ.id, currentAnswer?.selected_answer || null, true);
+    toast.success('Marked for review');
+  };
+
+  const handleDeleteAnswer = () => {
+    const currentQ = questions[currentIndex];
+    saveAnswer(currentQ.id, null, false);
+    toast.success('Answer cleared');
+  };
+
+  const handleAutoSubmit = async () => {
+    toast.warning('Time is up! Submitting your test...');
+    await submitTest();
+  };
+
+  const submitTest = async () => {
+    try {
+      // Calculate total marks
+      let totalMarks = 0;
+      questions.forEach((q) => {
+        const ans = answers.get(q.id);
+        if (ans?.is_correct) {
+          totalMarks += q.marks;
+        }
+      });
+
+      await supabase
+        .from('student_competitions')
+        .update({
+          has_submitted: true,
+          submitted_at: new Date().toISOString(),
+          total_marks: totalMarks,
+        })
+        .eq('student_id', studentId)
+        .eq('competition_id', competitionId);
+
+      toast.success('Test submitted successfully!');
+      navigate('/student');
+    } catch (error) {
+      console.error('Error submitting test:', error);
+      toast.error('Failed to submit test');
+    }
+  };
+
+  const handleFinalSubmit = () => {
+    setSubmitDialogOpen(true);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">Loading test...</p>
+      </div>
+    );
+  }
+
+  if (!competition || questions.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="p-6">
+          <p className="text-muted-foreground">No questions available for this test.</p>
+          <Button onClick={() => navigate('/student')} className="mt-4">Go Back</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const currentQuestion = questions[currentIndex];
+  const currentAnswer = answers.get(currentQuestion.id);
+  const isLastQuestion = currentIndex === questions.length - 1;
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Ready Dialog */}
+      <Dialog open={readyDialogOpen} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ready to start the test?</DialogTitle>
+            <DialogDescription>
+              <div className="mt-4 space-y-2">
+                <p><strong>Competition:</strong> {competition.name}</p>
+                <p><strong>Duration:</strong> {competition.duration_minutes} minutes</p>
+                <p><strong>Questions:</strong> {questions.length}</p>
+              </div>
+              <div className="mt-4 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                <p className="text-sm text-warning">
+                  ⚠️ Once you start, the timer cannot be paused. Make sure you're ready.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => navigate('/student')}>
+              Go Back
+            </Button>
+            <Button onClick={handleStartTest} className="gradient-primary text-primary-foreground">
+              Start Test
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Submit Confirmation Dialog */}
+      <Dialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              Confirm Submission
+            </DialogTitle>
+            <DialogDescription>
+              <div className="mt-4 space-y-2">
+                <p>Are you sure you want to submit your test?</p>
+                <div className="mt-4 p-3 rounded-lg bg-muted">
+                  <p className="text-sm">
+                    <strong>Answered:</strong> {Array.from(answers.values()).filter(a => a.selected_answer).length} / {questions.length}
+                  </p>
+                  <p className="text-sm">
+                    <strong>Marked for review:</strong> {Array.from(answers.values()).filter(a => a.is_marked_for_review).length}
+                  </p>
+                </div>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubmitDialogOpen(false)}>
+              Continue Test
+            </Button>
+            <Button onClick={submitTest} className="gradient-primary text-primary-foreground">
+              Submit Test
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {hasStarted && (
+        <>
+          {/* Header with Timer */}
+          <header 
+            className="sticky top-0 z-50 border-b py-3 px-4"
+            style={{ backgroundColor: competition.primary_color }}
+          >
+            <div className="container mx-auto flex items-center justify-between">
+              <div className="text-primary-foreground">
+                <h1 className="font-bold text-lg">{competition.name}</h1>
+                <p className="text-sm opacity-90">Question {currentIndex + 1} of {questions.length}</p>
+              </div>
+              <div className={`timer-display px-4 py-2 rounded-xl ${timeLeft <= 60 ? 'bg-destructive text-destructive-foreground animate-pulse' : 'bg-card text-foreground'}`}>
+                <Clock className="w-5 h-5 inline-block mr-2" />
+                {formatTime(timeLeft)}
+              </div>
+            </div>
+          </header>
+
+          <div className="container mx-auto px-4 py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Question Panel */}
+              <div className="lg:col-span-3">
+                <Card className="border-border/50">
+                  <CardContent className="p-6">
+                    {/* Question */}
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="px-3 py-1 rounded-full bg-primary/10 text-primary font-medium text-sm">
+                          Question {currentQuestion.question_number}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {currentQuestion.marks} mark{currentQuestion.marks > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <p className="text-lg text-foreground">{currentQuestion.question_text}</p>
+                      {currentQuestion.image_url && (
+                        <img 
+                          src={currentQuestion.image_url} 
+                          alt="Question" 
+                          className="mt-4 max-h-64 rounded-lg object-contain"
+                        />
+                      )}
+                    </div>
+
+                    {/* Options */}
+                    <div className="space-y-3">
+                      {(['A', 'B', 'C', 'D'] as const).map((opt) => {
+                        const optionKey = `option_${opt.toLowerCase()}` as keyof Question;
+                        const isSelected = currentAnswer?.selected_answer === opt;
+                        
+                        return (
+                          <button
+                            key={opt}
+                            onClick={() => handleSelectAnswer(opt)}
+                            className={`question-option w-full text-left ${isSelected ? 'selected' : ''}`}
+                          >
+                            <div className="flex items-center gap-4">
+                              <span className={`w-8 h-8 rounded-full flex items-center justify-center font-medium ${
+                                isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {opt}
+                              </span>
+                              <span className="flex-1">{currentQuestion[optionKey] as string}</span>
+                              {isSelected && <Check className="w-5 h-5 text-primary" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-border">
+                      <Button
+                        variant="outline"
+                        onClick={handleMarkReview}
+                        className="text-warning border-warning hover:bg-warning/10"
+                      >
+                        <Flag className="w-4 h-4 mr-2" />
+                        Mark for Review
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleDeleteAnswer}
+                        className="text-destructive border-destructive hover:bg-destructive/10"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Clear Answer
+                      </Button>
+                      {isLastQuestion && (
+                        <Button
+                          onClick={handleFinalSubmit}
+                          className="ml-auto gradient-primary text-primary-foreground"
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          Submit Test
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Navigation */}
+                    <div className="flex justify-between mt-6">
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                        disabled={currentIndex === 0}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-2" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentIndex(Math.min(questions.length - 1, currentIndex + 1))}
+                        disabled={isLastQuestion}
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Question Navigator */}
+              <div className="lg:col-span-1">
+                <Card className="border-border/50 sticky top-24">
+                  <CardContent className="p-4">
+                    <h3 className="font-medium text-foreground mb-4">Question Navigator</h3>
+                    <div className="grid grid-cols-5 gap-2">
+                      {questions.map((q, idx) => {
+                        const ans = answers.get(q.id);
+                        const isAnswered = !!ans?.selected_answer;
+                        const isReview = ans?.is_marked_for_review;
+                        const isCurrent = idx === currentIndex;
+                        
+                        return (
+                          <button
+                            key={q.id}
+                            onClick={() => setCurrentIndex(idx)}
+                            className={`question-nav-btn ${
+                              isReview ? 'review' : isAnswered ? 'answered' : 'unanswered'
+                            } ${isCurrent ? 'current' : ''}`}
+                          >
+                            {idx + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-border space-y-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded bg-muted" />
+                        <span className="text-muted-foreground">Not Answered</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded bg-primary" />
+                        <span className="text-muted-foreground">Answered</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded bg-warning" />
+                        <span className="text-muted-foreground">Marked for Review</span>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={handleFinalSubmit}
+                      className="w-full mt-4 gradient-primary text-primary-foreground"
+                    >
+                      Submit Test
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
