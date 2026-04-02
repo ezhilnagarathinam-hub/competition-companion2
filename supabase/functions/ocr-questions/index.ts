@@ -30,18 +30,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Convert file to base64 in chunks to avoid stack overflow
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
-    }
-    const base64 = btoa(binary);
-    const mimeType = file.type || 'image/png';
-
     const apiKey = Deno.env.get('LOVABLE_API_KEY');
     if (!apiKey) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -82,13 +70,44 @@ Important:
     // Build content array based on file type
     const content: any[] = [{ type: 'text', text: prompt }];
 
-    if (isImage) {
+    if (isDoc) {
+      // For DOC/DOCX files, extract raw text from the binary and send as text
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      
+      // Extract readable text from DOCX (which is a ZIP containing XML)
+      let extractedText = '';
+      try {
+        extractedText = extractTextFromDocx(bytes);
+      } catch {
+        // Fallback: extract any readable ASCII/UTF text from the binary
+        extractedText = extractRawText(bytes);
+      }
+      
+      if (extractedText.trim().length < 10) {
+        return new Response(JSON.stringify({ error: 'Could not extract text from document. Try converting to PDF or image first.' }), {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       content.push({
-        type: 'image_url',
-        image_url: { url: `data:${mimeType};base64,${base64}` }
+        type: 'text',
+        text: `Here is the extracted text from the document:\n\n${extractedText}`
       });
     } else {
-      // For PDF and DOC, send as file data with description
+      // For images and PDFs, send as base64
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+      const base64 = btoa(binary);
+      const mimeType = file.type || 'image/png';
+
       content.push({
         type: 'image_url',
         image_url: { url: `data:${mimeType};base64,${base64}` }
@@ -152,3 +171,52 @@ Important:
     });
   }
 });
+
+// Extract text from DOCX (ZIP containing XML files)
+function extractTextFromDocx(bytes: Uint8Array): string {
+  // DOCX is a ZIP file. Find the document.xml entry and extract text from XML tags.
+  const zipData = bytes;
+  const textParts: string[] = [];
+  
+  // Find PK signatures and locate document.xml
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const fullText = decoder.decode(zipData);
+  
+  // Look for XML content between word/document.xml markers
+  // Extract text from <w:t> tags which contain the actual text in DOCX
+  const wtMatches = fullText.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+  for (const match of wtMatches) {
+    if (match[1]) {
+      textParts.push(match[1]);
+    }
+  }
+  
+  if (textParts.length > 0) {
+    // Join with spaces, but detect paragraph breaks from </w:p> tags
+    let result = '';
+    const paragraphs = fullText.split('</w:p>');
+    for (const para of paragraphs) {
+      const paraTexts: string[] = [];
+      const matches = para.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+      for (const m of matches) {
+        if (m[1]) paraTexts.push(m[1]);
+      }
+      if (paraTexts.length > 0) {
+        result += paraTexts.join('') + '\n';
+      }
+    }
+    return result;
+  }
+  
+  return '';
+}
+
+// Fallback: extract any readable text from binary
+function extractRawText(bytes: Uint8Array): string {
+  const decoder = new TextDecoder('utf-8', { fatal: false });
+  const text = decoder.decode(bytes);
+  // Filter to only readable characters
+  return text.replace(/[^\x20-\x7E\n\r\t\u0B80-\u0BFF\u0900-\u097F]/g, ' ')
+    .replace(/\s{3,}/g, '\n')
+    .trim();
+}
