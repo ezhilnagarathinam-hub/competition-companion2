@@ -67,12 +67,20 @@ export default function Results() {
 
   async function fetchLeaderboard(competitionId: string) {
     try {
+      // Get competition details for time checking
+      const { data: compData } = await supabase
+        .from('competitions')
+        .select('*')
+        .eq('id', competitionId)
+        .single();
+
       const { data: submissions, error: subError } = await supabase
         .from('student_competitions')
         .select(`
           student_id,
           total_marks,
           submitted_at,
+          started_at,
           students!inner(name)
         `)
         .eq('competition_id', competitionId)
@@ -81,12 +89,26 @@ export default function Results() {
 
       if (subError) throw subError;
 
-      const entries: LeaderboardEntry[] = (submissions || []).map((s: any) => ({
-        student_id: s.student_id,
-        student_name: s.students?.name || 'Unknown',
-        total_marks: s.total_marks || 0,
-        submitted_at: s.submitted_at,
-      }));
+      const entries: LeaderboardEntry[] = (submissions || []).map((s: any) => {
+        // Check if submission was late
+        let isLate = false;
+        if (compData && s.started_at && s.submitted_at) {
+          const startedAt = new Date(s.started_at).getTime();
+          const submittedAt = new Date(s.submitted_at).getTime();
+          const durationMs = compData.duration_minutes * 60 * 1000;
+          // 30s grace period
+          if (submittedAt - startedAt > durationMs + 30000) {
+            isLate = true;
+          }
+        }
+        return {
+          student_id: s.student_id,
+          student_name: s.students?.name || 'Unknown',
+          total_marks: s.total_marks || 0,
+          submitted_at: s.submitted_at,
+          isLate,
+        };
+      });
 
       setLeaderboard(entries);
     } catch (error) {
