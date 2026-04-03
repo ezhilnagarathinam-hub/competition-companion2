@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Competition } from '@/types/database';
 import { format } from 'date-fns';
+import { formatTime12 } from '@/lib/timeFormat';
 
 export default function Competitions() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
