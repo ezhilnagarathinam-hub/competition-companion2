@@ -252,7 +252,7 @@ export default function Results() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {entry.submitted_at 
-                        ? new Date(entry.submitted_at).toLocaleString() 
+                        ? new Date(entry.submitted_at).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, month: 'short', day: 'numeric' }) 
                         : '-'}
                     </TableCell>
                   </TableRow>

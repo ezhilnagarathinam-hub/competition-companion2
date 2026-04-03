@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { Competition, StudentCompetition } from '@/types/database';
 import { format, isToday, parseISO } from 'date-fns';
+import { formatTime12 } from '@/lib/timeFormat';
 
 interface CompetitionWithStatus extends Competition {
   studentStatus?: StudentCompetition;
@@ -207,7 +208,7 @@ export default function StudentDashboard() {
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          {comp.start_time} - {comp.end_time}
+                          {formatTime12(comp.start_time)} - {formatTime12(comp.end_time)}
                         </span>
                         <span>{formatDuration(comp.duration_minutes)}</span>
                       </div>
