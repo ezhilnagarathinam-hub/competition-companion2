@@ -208,7 +208,7 @@ export default function StudentDashboard() {
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
-                          {comp.start_time} - {comp.end_time}
+                          {formatTime12(comp.start_time)} - {formatTime12(comp.end_time)}
                         </span>
                         <span>{formatDuration(comp.duration_minutes)}</span>
                       </div>
