@@ -53,6 +53,8 @@ export default function Settings() {
       return;
     }
     try {
+      // SECURITY WARNING: Insecure client-side password verification against direct database column.
+      // This should be replaced with Supabase Auth or server-side hashing in a production environment.
       const { data, error } = await supabase
         .from('admins')
         .select('id')
@@ -66,6 +68,7 @@ export default function Settings() {
         return;
       }
 
+      // SECURITY WARNING: Insecure client-side password update.
       const { error: updateError } = await supabase
         .from('admins')
         .update({ password_hash: newPassword })

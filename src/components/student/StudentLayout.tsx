@@ -27,7 +27,7 @@ export function StudentLayout() {
               <Trophy className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-bold text-foreground">TestMaster</h1>
+              <h1 className="font-bold text-foreground font-display">COMPETE <span className="neon-text">ME</span></h1>
               <p className="text-xs text-muted-foreground">Student Portal</p>
             </div>
           </div>

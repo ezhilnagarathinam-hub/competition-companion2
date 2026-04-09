@@ -469,7 +469,9 @@ export default function TestInterface() {
           >
             <div className="container mx-auto flex items-center justify-between">
               <div className="text-primary-foreground">
-                <h1 className="font-bold text-lg">{competition.name}</h1>
+                <h1 className="font-bold text-lg font-display uppercase tracking-wider">
+                  <span className="text-primary-foreground/70">COMPETE</span> ME | {competition.name}
+                </h1>
                 <p className="text-sm opacity-90">Question {currentIndex + 1} of {questions.length}</p>
               </div>
               <div className={`timer-display px-4 py-2 rounded-xl ${timeLeft <= 60 ? 'bg-destructive text-destructive-foreground animate-pulse' : 'bg-card text-foreground'}`}>

@@ -22,10 +22,12 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
+      // SECURITY WARNING: Insecure client-side password verification against direct database column.
+      // This should be replaced with Supabase Auth or server-side hashing in a production environment.
       const { data, error } = await supabase
         .from('admins')
         .select('*')
-        .eq('email', email)
+        .eq('email', email.trim())
         .eq('password_hash', password)
         .maybeSingle();
 
@@ -117,11 +119,6 @@ export default function AdminLogin() {
               </Button>
             </form>
 
-            <div className="mt-4 p-3 rounded-lg bg-muted/30 border border-border/50">
-              <p className="text-xs text-muted-foreground text-center">
-                Default credentials: admin@test.com / admin123
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

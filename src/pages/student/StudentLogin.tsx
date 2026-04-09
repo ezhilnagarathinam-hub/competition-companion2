@@ -22,10 +22,12 @@ export default function StudentLogin() {
     setLoading(true);
 
     try {
+      // SECURITY WARNING: Insecure client-side password verification against direct database column.
+      // This should be replaced with Supabase Auth or server-side hashing in a production environment.
       const { data, error } = await supabase
         .from('students')
         .select('id, name')
-        .eq('username', username)
+        .eq('username', username.trim())
         .eq('password', password)
         .maybeSingle();
 
