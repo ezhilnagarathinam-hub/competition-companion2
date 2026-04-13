@@ -11,6 +11,7 @@ export interface Competition {
   name: string;
   description: string | null;
   date: string;
+  end_date: string | null;
   start_time: string;
   end_time: string;
   duration_minutes: number;
