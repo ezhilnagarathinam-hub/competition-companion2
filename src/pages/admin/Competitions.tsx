@@ -273,7 +273,7 @@ export default function Competitions() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="date">Start Date</Label>
                   <Input
@@ -294,6 +294,9 @@ export default function Competitions() {
                     min={formData.date}
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Duration</Label>
                   <div className="flex gap-2">
