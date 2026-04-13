@@ -95,20 +95,19 @@ export default function StudentDashboard() {
     if (comp.studentStatus?.has_submitted) return false;
     
     const now = new Date();
-    const compDate = parseISO(comp.date);
-    
-    if (!isToday(compDate)) return false;
+    const startDate = parseISO(comp.date);
+    const endDate = comp.end_date ? parseISO(comp.end_date) : startDate;
     
     const [startH, startM] = comp.start_time.split(':').map(Number);
     const [endH, endM] = comp.end_time.split(':').map(Number);
     
-    const startTime = new Date(now);
-    startTime.setHours(startH, startM, 0, 0);
+    const windowStart = new Date(startDate);
+    windowStart.setHours(startH, startM, 0, 0);
     
-    const endTime = new Date(now);
-    endTime.setHours(endH, endM, 0, 0);
+    const windowEnd = new Date(endDate);
+    windowEnd.setHours(endH, endM, 0, 0);
     
-    return now >= startTime && now <= endTime;
+    return now >= windowStart && now <= windowEnd;
   }
 
   function formatDuration(minutes: number): string {
@@ -204,7 +203,10 @@ export default function StudentDashboard() {
                       <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
-                          {format(parseISO(comp.date), 'MMM dd, yyyy')}
+                          {comp.end_date && comp.end_date !== comp.date
+                            ? `${format(parseISO(comp.date), 'MMM dd')} – ${format(parseISO(comp.end_date), 'MMM dd, yyyy')}`
+                            : format(parseISO(comp.date), 'MMM dd, yyyy')
+                          }
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4" />
