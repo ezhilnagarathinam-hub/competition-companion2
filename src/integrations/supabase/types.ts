@@ -44,6 +44,7 @@ export type Database = {
           date: string
           description: string | null
           duration_minutes: number
+          end_date: string | null
           end_time: string
           id: string
           is_active: boolean | null
@@ -61,6 +62,7 @@ export type Database = {
           date: string
           description?: string | null
           duration_minutes?: number
+          end_date?: string | null
           end_time: string
           id?: string
           is_active?: boolean | null
@@ -78,6 +80,7 @@ export type Database = {
           date?: string
           description?: string | null
           duration_minutes?: number
+          end_date?: string | null
           end_time?: string
           id?: string
           is_active?: boolean | null
