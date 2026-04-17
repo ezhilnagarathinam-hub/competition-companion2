@@ -131,7 +131,7 @@ export default function Index() {
       <footer className="py-8 border-t border-border/50">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            © 2024 <span className="font-display font-bold neon-text">COMPETE ME</span>. All rights reserved.
+            © 2026 <span className="font-display font-bold neon-text">COMPETE ME / EA DREAM SUPPORTERS</span>. All rights reserved.
           </p>
         </div>
       </footer>
