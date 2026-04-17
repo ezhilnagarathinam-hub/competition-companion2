@@ -124,17 +124,19 @@ export default function Index() {
 
       {/* Footer */}
       <footer className="py-8 border-t border-border/50">
-        <div className="container mx-auto px-4 text-center relative">
+        <div className="container mx-auto px-4 text-center">
+          <div className="mb-2">
+            <Link
+              to="/admin/login"
+              aria-label="Admin"
+              className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors underline-offset-2 hover:underline"
+            >
+              admin
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">
             © 2026 <span className="font-display font-bold neon-text">COMPETE ME / EA DREAM SUPPORTERS</span>. All rights reserved.
           </p>
-          <Link
-            to="/admin/login"
-            aria-label="Admin"
-            className="absolute right-4 bottom-0 text-[10px] text-muted-foreground/30 hover:text-muted-foreground transition-colors"
-          >
-            ·
-          </Link>
         </div>
       </footer>
     </div>
